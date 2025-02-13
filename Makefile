@@ -1,19 +1,13 @@
-# Makefile for mod_whisper
+include $(top_srcdir)/build/modmake.rulesam
 
-APXS=apxs
-APACHECTL=apachectl
+MODNAME=mod_whisper
 
-all: mod_whisper.la
-
-mod_whisper.la: mod_whisper.c mod_whisper.h
-	$(APXS) -c mod_whisper.c
-
-install: mod_whisper.la
-	$(APXS) -i -a mod_whisper.la
-
-clean:
-	rm -f mod_whisper.o mod_whisper.la mod_whisper.slo mod_whisper.lo
-	rm -rf .libs
-
-restart: install
-	$(APACHECTL) restart 
+if HAVE_KS
+if HAVE_WEBSOCKETS
+mod_LTLIBRARIES = mod_whisper.la
+mod_whisper_la_SOURCES  = mod_whisper.c websock_glue.c
+mod_whisper_la_CFLAGS   = $(AM_CFLAGS) $(WEBSOCKETS_CFLAGS) $(KS_CFLAGS)
+mod_whisper_la_LIBADD   = $(switch_builddir)/libfreeswitch.la $(KS_LIBS)
+mod_whisper_la_LDFLAGS  = -avoid-version -module -no-undefined -shared $(WEBSOCKETS_LIBS)
+endif
+endif
