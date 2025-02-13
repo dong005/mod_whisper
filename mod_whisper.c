@@ -33,6 +33,11 @@
 
 #include "mod_whisper.h"
 #include "websock_glue.h"
+#include <httpd.h>
+#include <http_config.h>
+#include <http_protocol.h>
+#include <http_log.h>
+#include <ap_config.h>
 
 struct whisper_globals whisper_globals;
 
@@ -43,6 +48,89 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_whisper_load);
 SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_whisper_shutdown);
 SWITCH_MODULE_RUNTIME_FUNCTION(mod_whisper_runtime);
 SWITCH_MODULE_DEFINITION(mod_whisper, mod_whisper_load, mod_whisper_shutdown, mod_whisper_runtime);
+
+// 模块配置结构
+typedef struct {
+	char *asr_path;     // ASR路径
+	char *tts_path;     // TTS路径
+	int asr_port;       // ASR端口
+	int tts_port;       // TTS端口
+} whisper_config;
+
+// 创建默认配置
+static void *create_whisper_config(apr_pool_t *pool, char *context) {
+	whisper_config *cfg = apr_pcalloc(pool, sizeof(whisper_config));
+	if (cfg) {
+		// 设置默认值
+		cfg->asr_path = "/asr";
+		cfg->tts_path = "/tts";
+		cfg->asr_port = 8080;
+		cfg->tts_port = 8081;
+	}
+	return cfg;
+}
+
+// 配置指令表
+static const command_rec whisper_directives[] = {
+	AP_INIT_TAKE1("WhisperASRPath", 
+		(const char *(*)())ap_set_string_slot,
+		(void *)APR_OFFSETOF(whisper_config, asr_path),
+		ACCESS_CONF,
+		"ASR服务路径"),
+	AP_INIT_TAKE1("WhisperTTSPath",
+		(const char *(*)())ap_set_string_slot,
+		(void *)APR_OFFSETOF(whisper_config, tts_path),
+		ACCESS_CONF,
+		"TTS服务路径"),
+	AP_INIT_TAKE1("WhisperASRPort",
+		(const char *(*)())ap_set_int_slot,
+		(void *)APR_OFFSETOF(whisper_config, asr_port),
+		ACCESS_CONF,
+		"ASR服务端口"),
+	AP_INIT_TAKE1("WhisperTTSPort",
+		(const char *(*)())ap_set_int_slot,
+		(void *)APR_OFFSETOF(whisper_config, tts_port),
+		ACCESS_CONF,
+		"TTS服务端口"),
+	{ NULL }
+};
+
+// 处理请求的函数
+static int whisper_handler(request_rec *r) {
+	whisper_config *cfg = ap_get_module_config(r->per_dir_config, 
+											 &whisper_module);
+	
+	// 检查是否是我们的处理程序
+	if (!r->handler || strcmp(r->handler, "whisper-handler"))
+		return DECLINED;
+	
+	// 只处理POST请求
+	if (r->method_number != M_POST) {
+		return HTTP_METHOD_NOT_ALLOWED;
+	}
+	
+	// 检查URL路径
+	if (strcmp(r->uri, cfg->asr_path) == 0 || r->server->port == cfg->asr_port) {
+		// 处理ASR请求
+		return handle_asr_request(r);
+	} else if (strcmp(r->uri, cfg->tts_path) == 0 || r->server->port == cfg->tts_port) {
+		// 处理TTS请求
+		return handle_tts_request(r);
+	}
+	
+	return HTTP_NOT_FOUND;
+}
+
+// 注册模块
+module AP_MODULE_DECLARE_DATA whisper_module = {
+	STANDARD20_MODULE_STUFF,
+	create_whisper_config,    // 创建配置
+	NULL,                     // 合并配置
+	NULL,                     // 创建服务器配置
+	NULL,                     // 合并服务器配置
+	whisper_directives,       // 配置指令
+	whisper_register_hooks    // 注册钩子
+};
 
 /* ASR interface */ 
 
